@@ -1,0 +1,74 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Validation helpers
+    function isValidPatient(data) {
+      return data.keys().hasAll(['name', 'condition', 'timestamp']) &&
+             data.keys().size() == 3 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.condition is string && data.condition.size() <= 2000 &&
+             data.timestamp is number;
+    }
+
+    function isValidParamedic(data) {
+      return data.keys().hasAll(['name', 'specialty', 'timestamp']) &&
+             data.keys().size() == 3 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.specialty is string && data.specialty.size() <= 200 &&
+             data.timestamp is number;
+    }
+
+    function isValidUsualItem(data) {
+      return data.keys().hasAll(['title', 'description', 'timestamp']) &&
+             data.keys().size() == 3 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.timestamp is number;
+    }
+
+    // User data match blocks
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      
+      match /patients/{patientId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidPatient(request.resource.data);
+        allow update: if isOwner(userId) && isValidPatient(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /paramedics/{paramedicId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidParamedic(request.resource.data);
+        allow update: if isOwner(userId) && isValidParamedic(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /usualItems/{itemId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidUsualItem(request.resource.data);
+        allow update: if isOwner(userId) && isValidUsualItem(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

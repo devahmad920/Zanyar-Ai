@@ -1,0 +1,51 @@
+{
+  "entities": {
+    "Patient": {
+      "title": "Patient",
+      "description": "Patient information for the paramedic list",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "condition": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["name", "condition", "timestamp"]
+    },
+    "Paramedic": {
+      "title": "Paramedic",
+      "description": "Paramedic information for the paramedic list",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "specialty": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["name", "specialty", "timestamp"]
+    },
+    "UsualItem": {
+      "title": "Usual Item",
+      "description": "General tasks or items for the usual list",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["title", "description", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/patients": {
+      "schema": "Patient",
+      "description": "A user's private list of patients"
+    },
+    "/users/{userId}/paramedics": {
+      "schema": "Paramedic",
+      "description": "A user's private list of paramedics"
+    },
+    "/users/{userId}/usualItems": {
+      "schema": "UsualItem",
+      "description": "A user's private list of general items"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Zanyar AI - Kurdish Study Assistant",
+  "description": "An all-in-one AI assistant for Kurdish learners and professionals, featuring study tools, AI media generation, and specialized lists for paramedics and general tasks.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
