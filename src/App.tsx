@@ -168,9 +168,13 @@ export default function App() {
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setIsAuthLoading(false);
+    const unsubscribe = onAuthStateChanged(auth, (curUser) => {
+      if (!curUser) {
+        signInAnonymously(auth).catch(e => console.error("Anon login fail", e));
+      } else {
+        setUser(curUser);
+        setIsAuthLoading(false);
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -288,30 +292,11 @@ export default function App() {
     }
   };
 
-  const handleLogin = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      console.error("Login error:", error);
-    }
-  };
-
-  const handleGuestLogin = async () => {
-    try {
-      await signInAnonymously(auth);
-    } catch (error) {
-      console.error("Guest login error:", error);
-    }
-  };
-
+  const handleLogin = async () => {};
+  const handleGuestLogin = async () => {};
   const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      setMessages([]);
-      setActiveTab('home');
-    } catch (error) {
-      console.error("Logout error:", error);
-    }
+    setMessages([]);
+    setActiveTab('home');
   };
 
   useEffect(() => {
@@ -652,60 +637,6 @@ export default function App() {
     );
   }
 
-  if (!user) {
-    return (
-      <div className="h-screen w-full flex flex-col items-center justify-center bg-background p-6" dir={language === 'ku' ? 'rtl' : 'ltr'}>
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bg-card border rounded-[2rem] p-10 shadow-2xl text-center"
-        >
-          <div className="p-4 bg-primary/10 rounded-2xl w-fit mx-auto mb-6">
-            <Sparkles className="w-12 h-12 text-primary" />
-          </div>
-          <h1 className="text-3xl font-bold mb-4 font-kurdish">
-            {t.welcomeToZanyar}
-          </h1>
-          <p className="text-muted-foreground mb-10 font-kurdish leading-relaxed">
-            {t.signInToStart}
-          </p>
-          
-          <div className="space-y-4">
-            <button 
-              onClick={handleLogin}
-              className="w-full flex items-center justify-center gap-4 py-4 bg-primary text-primary-foreground rounded-2xl font-bold text-lg hover:shadow-xl transition-all active:scale-95"
-            >
-               <LogIn className="w-6 h-6" />
-               <span>{t.loginWithGoogle}</span>
-            </button>
-
-            <button 
-              onClick={handleGuestLogin}
-              className="w-full flex items-center justify-center gap-4 py-4 bg-muted text-muted-foreground rounded-2xl font-bold text-lg hover:bg-muted/80 transition-all active:scale-95 border"
-            >
-               <Users className="w-6 h-6" />
-               <span>{t.continueAsGuest}</span>
-            </button>
-          </div>
-
-          <div className="mt-8 flex justify-center gap-4">
-            {['ku', 'en'].map((l) => (
-              <button 
-                key={l}
-                onClick={() => setLanguage(l as LanguageCode)}
-                className={cn(
-                  "text-sm font-bold transition-all",
-                  language === l ? "text-primary" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {translations[l as LanguageCode].nativeName}
-              </button>
-            ))}
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background text-foreground transition-colors duration-300 font-sans" dir={['ku', 'ar', 'fa'].includes(language) ? 'rtl' : 'ltr'}>
@@ -788,16 +719,10 @@ export default function App() {
                
                 <div className="flex items-center gap-2 p-2 px-1">
                   <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold shadow-inner overflow-hidden">
-                    {user?.photoURL ? <img src={user.photoURL} alt="User" /> : user?.displayName?.charAt(0) || 'A'}
+                    <Users className="w-5 h-5" />
                   </div>
                   <div className="flex flex-col overflow-hidden">
-                    <span className="text-sm font-bold truncate">{user?.displayName || (user?.isAnonymous ? t.continueAsGuest?.split(' ').pop() : 'ئەحمەد')}</span>
-                    <button 
-                      onClick={handleLogout}
-                      className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold hover:text-destructive transition-colors text-right"
-                    >
-                      {t.logout}
-                    </button>
+                    <span className="text-sm font-bold truncate">{(language === 'ku' ? 'میوان' : 'Guest')}</span>
                   </div>
                 </div>
             </div>
@@ -830,7 +755,8 @@ export default function App() {
                       animate={{ opacity: 1, y: 0 }}
                       className="text-4xl md:text-5xl font-black font-kurdish mb-4 tracking-tight"
                     >
-                      {t.goodDay} <span className="text-primary italic">{user?.displayName?.split(' ')[0] || (user?.isAnonymous ? (language === 'ku' ? 'میوان' : 'Guest') : '')}</span> 👋
+                      {t.goodDay} 👋
+
                     </motion.h2>
                     <p className="text-xl text-muted-foreground font-kurdish">
                       {t.readyToLearn}
