@@ -26,34 +26,24 @@ If the user asks in English or another language, reply in that language but keep
 export async function askZanyar(
   prompt: string, 
   history: { role: string; parts: { text: string }[] }[] = [],
-  image?: { inlineData: { data: string; mimeType: string } }
+  imagePart?: { inlineData: { data: string; mimeType: string } }
 ) {
   try {
-    const formattedHistory = [
-      { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
-      { role: "model", parts: [{ text: "تێگەیشتم. من زانیار AI-م، یاریدەدەری زیرەکی تۆ بۆ خوێندن. چۆن دەتوانم ئەمڕۆ یارمەتیت بدەم؟" }] },
-      ...history.map(item => ({
-        role: item.role === 'model' ? 'model' : 'user',
-        parts: item.parts
-      }))
-    ];
-
-    const parts: any[] = [{ text: prompt }];
-    if (image) {
-      parts.push(image);
-    }
-
-    const result = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: [
-        ...formattedHistory,
-        { role: "user", parts }
-      ]
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, history, imagePart })
     });
 
-    return result.text || "";
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || "Failed to call Gemini API");
+    }
+
+    const data = await response.json();
+    return data.text || "";
   } catch (error) {
-    console.error("Gemini API Error:", error);
+    console.error("Gemini Service Error:", error);
     throw error;
   }
 }

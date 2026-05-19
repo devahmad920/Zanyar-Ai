@@ -88,14 +88,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  // In a real production app we'd show a toast here. 
-  // For this environment, throwing helps the agent diagnose issues.
-  // We only throw if it's a permission error or availability issue that we need to fix.
-  if (errInfo.error.includes('permission-denied') || 
-      errInfo.error.includes('sufficient permissions') ||
-      errInfo.error.includes('unavailable')) {
-     throw new Error(JSON.stringify(errInfo));
-  }
+  // Don't throw anymore to prevent crashing the whole app
 }
 
 export default function App() {
