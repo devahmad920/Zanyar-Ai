@@ -93,6 +93,10 @@ export const KurdishTranslations = {
   description: "وەسف",
   paramedicDesc: "بەڕێوەبردنی لیستی نەخۆشەکان و پارامیدیکەکان",
   usualDesc: "بەڕێوەبردنی بڕگە و کارە ئاساییەکانی ڕۆژانە",
+  continueAsGuest: "بەردەوامبوون وەک میوان",
+  noPatients: "هیچ نەخۆشێک نییە",
+  noParamedics: "هیچ پارامیدیکێک نییە",
+  noItems: "هیچ بڕگەیەک نییە",
 } as const;
 
 export const EnglishTranslations = {
@@ -190,6 +194,10 @@ export const EnglishTranslations = {
   description: "Description",
   paramedicDesc: "Manage patients and paramedic lists efficiently.",
   usualDesc: "Track your daily tasks and general assistant items.",
+  continueAsGuest: "Continue as Guest",
+  noPatients: "No patients found",
+  noParamedics: "No paramedics found",
+  noItems: "No items found",
 } as const;
 
 export const ArabicTranslations = {
@@ -287,6 +295,10 @@ export const ArabicTranslations = {
   description: "الوصف",
   paramedicDesc: "إدارة المرضى وقوائم المسعفين بكفاءة.",
   usualDesc: "تتبع مهامك اليومية والعناصر المساعدة العامة.",
+  continueAsGuest: "المتابعة كضيف",
+  noPatients: "لم يتم العثور على مرضى",
+  noParamedics: "لم يتم العثور على مسعفين",
+  noItems: "لم يتم العثور على عناصر",
 } as const;
 
 export const PersianTranslations = {
@@ -384,6 +396,10 @@ export const PersianTranslations = {
   description: "توضیحات",
   paramedicDesc: "مدیریت بیماران و لیست‌های پیراپزشکی به صورت کارآمد.",
   usualDesc: "پیگیری کارهای روزانه و موارد دستیار عمومی.",
+  continueAsGuest: "ادامه به عنوان مهمان",
+  noPatients: "بیماری یافت نشد",
+  noParamedics: "پیراپزشکی یافت نشد",
+  noItems: "موردی یافت نشد",
 } as const;
 
 export const FrenchTranslations = {
@@ -481,6 +497,10 @@ export const FrenchTranslations = {
   description: "Description",
   paramedicDesc: "Gérez les patients et les listes de paramédics efficacement.",
   usualDesc: "Suivez vos tâches quotidiennes et les articles d'assistant général.",
+  continueAsGuest: "Continuer en tant qu'invité",
+  noPatients: "Aucun patient trouvé",
+  noParamedics: "Aucun paramédic trouvé",
+  noItems: "Aucun article trouvé",
 } as const;
 
 export const GermanTranslations = {
@@ -578,6 +598,10 @@ export const GermanTranslations = {
   description: "Beschreibung",
   paramedicDesc: "Verwalten Sie Patienten und Sanitäterlisten effizient.",
   usualDesc: "Verfolgen Sie Ihre täglichen Aufgaben und allgemeinen Hilfsmittel.",
+  continueAsGuest: "Als Gast fortfahren",
+  noPatients: "Keine Patienten gefunden",
+  noParamedics: "Keine Sanitäter gefunden",
+  noItems: "Keine Elemente gefunden",
 } as const;
 
 export const SpanishTranslations = {
@@ -675,6 +699,10 @@ export const SpanishTranslations = {
   description: "Descripción",
   paramedicDesc: "Gestione pacientes y listas de paramédicos de manera eficiente.",
   usualDesc: "Realice un seguimiento de sus tareas diarias y artículos de asistente general.",
+  continueAsGuest: "Continuar como invitado",
+  noPatients: "No se encontraron pacientes",
+  noParamedics: "No se encontraron paramédicos",
+  noItems: "No se encontraron artículos",
 } as const;
 
 export const TurkishTranslations = {
@@ -772,6 +800,10 @@ export const TurkishTranslations = {
   description: "Açıklama",
   paramedicDesc: "Hastaları ve paramedik listelerini verimli bir şekilde yönetin.",
   usualDesc: "Günlük görevlerinizi ve genel asistan öğelerinizi takip edin.",
+  continueAsGuest: "Misafir olarak devam et",
+  noPatients: "Hasta bulunamadı",
+  noParamedics: "Paramedik bulunamadı",
+  noItems: "Öğe bulunamadı",
 } as const;
 
 export const translations = {

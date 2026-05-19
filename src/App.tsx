@@ -42,7 +42,7 @@ import Markdown from 'react-markdown';
 import { jsPDF } from 'jspdf';
 import confetti from 'canvas-confetti';
 import { auth, googleProvider, db } from './lib/firebase';
-import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { signInWithPopup, signOut, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
 import { 
   collection, 
   addDoc, 
@@ -293,6 +293,14 @@ export default function App() {
       await signInWithPopup(auth, googleProvider);
     } catch (error) {
       console.error("Login error:", error);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    try {
+      await signInAnonymously(auth);
+    } catch (error) {
+      console.error("Guest login error:", error);
     }
   };
 
@@ -662,13 +670,23 @@ export default function App() {
             {t.signInToStart}
           </p>
           
-          <button 
-            onClick={handleLogin}
-            className="w-full flex items-center justify-center gap-4 py-4 bg-primary text-primary-foreground rounded-2xl font-bold text-lg hover:shadow-xl transition-all active:scale-95"
-          >
-             <LogIn className="w-6 h-6" />
-             <span>{t.loginWithGoogle}</span>
-          </button>
+          <div className="space-y-4">
+            <button 
+              onClick={handleLogin}
+              className="w-full flex items-center justify-center gap-4 py-4 bg-primary text-primary-foreground rounded-2xl font-bold text-lg hover:shadow-xl transition-all active:scale-95"
+            >
+               <LogIn className="w-6 h-6" />
+               <span>{t.loginWithGoogle}</span>
+            </button>
+
+            <button 
+              onClick={handleGuestLogin}
+              className="w-full flex items-center justify-center gap-4 py-4 bg-muted text-muted-foreground rounded-2xl font-bold text-lg hover:bg-muted/80 transition-all active:scale-95 border"
+            >
+               <Users className="w-6 h-6" />
+               <span>{t.continueAsGuest}</span>
+            </button>
+          </div>
 
           <div className="mt-8 flex justify-center gap-4">
             {['ku', 'en'].map((l) => (
@@ -773,7 +791,7 @@ export default function App() {
                     {user?.photoURL ? <img src={user.photoURL} alt="User" /> : user?.displayName?.charAt(0) || 'A'}
                   </div>
                   <div className="flex flex-col overflow-hidden">
-                    <span className="text-sm font-bold truncate">{user?.displayName || 'ئەحمەد'}</span>
+                    <span className="text-sm font-bold truncate">{user?.displayName || (user?.isAnonymous ? t.continueAsGuest?.split(' ').pop() : 'ئەحمەد')}</span>
                     <button 
                       onClick={handleLogout}
                       className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold hover:text-destructive transition-colors text-right"
@@ -812,7 +830,7 @@ export default function App() {
                       animate={{ opacity: 1, y: 0 }}
                       className="text-4xl md:text-5xl font-black font-kurdish mb-4 tracking-tight"
                     >
-                      {t.goodDay} <span className="text-primary italic">{user?.displayName?.split(' ')[0] || ''}</span> 👋
+                      {t.goodDay} <span className="text-primary italic">{user?.displayName?.split(' ')[0] || (user?.isAnonymous ? (language === 'ku' ? 'میوان' : 'Guest') : '')}</span> 👋
                     </motion.h2>
                     <p className="text-xl text-muted-foreground font-kurdish">
                       {t.readyToLearn}
@@ -1536,7 +1554,7 @@ export default function App() {
                   <header className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                       <h2 className="text-3xl font-bold font-kurdish mb-2">{t.paramedicList}</h2>
-                      <p className="text-muted-foreground font-kurdish">بەڕێوەبردنی لیستی نەخۆشەکان و پارامیدیکەکان</p>
+                      <p className="text-muted-foreground font-kurdish">{t.paramedicDesc}</p>
                     </div>
                     <div className="flex gap-2">
                        <button 
@@ -1599,7 +1617,7 @@ export default function App() {
                         {patients.length === 0 && (
                           <div className="text-center py-10 opacity-30">
                             <Activity className="w-12 h-12 mx-auto mb-2" />
-                            <p className="font-kurdish">هیچ نەخۆشێک نییە</p>
+                            <p className="font-kurdish">{t.noPatients}</p>
                           </div>
                         )}
                       </div>
@@ -1645,7 +1663,7 @@ export default function App() {
                         {paramedics.length === 0 && (
                           <div className="text-center py-10 opacity-30">
                             <Users className="w-12 h-12 mx-auto mb-2" />
-                            <p className="font-kurdish">هیچ پارامیدیکێک نییە</p>
+                            <p className="font-kurdish">{t.noParamedics}</p>
                           </div>
                         )}
                       </div>
@@ -1686,7 +1704,7 @@ export default function App() {
                         {usualItems.length === 0 && (
                           <div className="text-center py-10 opacity-30">
                             <CheckCircle2 className="w-12 h-12 mx-auto mb-2" />
-                            <p className="font-kurdish">هیچ بڕگەیەکی ئاسایی نییە</p>
+                            <p className="font-kurdish">{t.noItems}</p>
                           </div>
                         )}
                       </div>
