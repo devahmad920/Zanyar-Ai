@@ -170,13 +170,25 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (curUser) => {
       if (!curUser) {
-        signInAnonymously(auth).catch(e => console.error("Anon login fail", e));
+        signInAnonymously(auth).catch(e => {
+          console.error("Anon login fail", e);
+          setIsAuthLoading(false);
+        });
       } else {
         setUser(curUser);
         setIsAuthLoading(false);
       }
     });
-    return () => unsubscribe();
+
+    // Safety timeout to prevent permanent loading hang
+    const timer = setTimeout(() => {
+      setIsAuthLoading(false);
+    }, 5000);
+
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
   }, []);
 
   // Sync Patients and Paramedics with Firestore
