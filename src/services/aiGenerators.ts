@@ -1,30 +1,18 @@
-import { GoogleGenAI } from "@google/genai";
-
 export async function generateImage(prompt: string) {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || process.env.GEMINI_API_KEY });
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [
-          {
-            text: prompt,
-          },
-        ],
-      },
-      config: {
-        imageConfig: {
-          aspectRatio: "1:1",
-        },
-      },
+    const response = await fetch("/api/generate-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt })
     });
 
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        return `data:image/png;base64,${part.inlineData.data}`;
-      }
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || "Failed to generate image");
     }
-    throw new Error("No image data returned from model");
+
+    const data = await response.json();
+    return data.imageUrl;
   } catch (error) {
     console.error("Image generation error:", error);
     throw error;
@@ -32,44 +20,58 @@ export async function generateImage(prompt: string) {
 }
 
 export async function generateVideo(prompt: string, onStatus?: (status: string) => void) {
-  const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-  const ai = new GoogleGenAI({ apiKey });
-  
   try {
     if (onStatus) onStatus("Starting video generation...");
-    let operation = await ai.models.generateVideos({
-      model: 'veo-3.1-lite-generate-preview',
-      prompt: prompt,
-      config: {
-        numberOfVideos: 1,
-        resolution: '720p',
-        aspectRatio: '16:9'
-      }
+    
+    // 1. Start generation
+    const response = await fetch("/api/generate-video", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt })
     });
 
-    // Poll for completion
-    while (!operation.done) {
-      if (onStatus) onStatus("Generating video (this may take a few minutes)...");
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      // @ts-ignore
-      operation = await ai.operations.getVideosOperation({ operation: operation });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || "Failed to start video generation");
     }
 
-    const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-    if (!downloadLink) throw new Error("No video URI returned from operation");
+    const { operationName } = await response.json();
 
+    // 2. Poll for completion
+    let done = false;
+    while (!done) {
+      if (onStatus) onStatus("Generating video (this may take a few moments)...");
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      const statusRes = await fetch("/api/video-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operationName })
+      });
+
+      if (!statusRes.ok) {
+        throw new Error("Failed to check video status");
+      }
+
+      const statusData = await statusRes.json();
+      done = statusData.done;
+    }
+
+    // 3. Download / Get video
     if (onStatus) onStatus("Fetching video data...");
-    const response = await fetch(downloadLink, {
-      method: 'GET',
-      headers: {
-        'x-goog-api-key': apiKey || '',
-      },
+    const downloadRes = await fetch("/api/video-download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operationName })
     });
 
-    if (!response.ok) throw new Error(`Failed to fetch video: ${response.statusText}`);
+    if (!downloadRes.ok) {
+      const err = await downloadRes.json();
+      throw new Error(err.error || "Failed to download video");
+    }
 
-    const blob = await response.blob();
-    return URL.createObjectURL(blob);
+    const { base64 } = await downloadRes.json();
+    return base64;
   } catch (error) {
     console.error("Video generation error:", error);
     throw error;

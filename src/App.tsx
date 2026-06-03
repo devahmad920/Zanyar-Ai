@@ -29,7 +29,11 @@ import {
   Stethoscope,
   Activity,
   HeartPulse,
-  Users
+  Users,
+  Globe,
+  Copy,
+  Check,
+  ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { translations } from './translations';
@@ -37,7 +41,7 @@ import type { LanguageCode } from './translations';
 import { cn } from './lib/utils';
 import { askZanyar, generateQuiz, generateFlashcards } from './services/gemini';
 import { generateImage as aiGenerateImage, generateVideo as aiGenerateVideo } from './services/aiGenerators';
-import type { Message, QuizQuestion, Flashcard, AppState, Patient, Paramedic, UsualItem } from './types';
+import type { Message, QuizQuestion, Flashcard, AppState, UsualItem } from './types';
 import Markdown from 'react-markdown';
 import { jsPDF } from 'jspdf';
 import confetti from 'canvas-confetti';
@@ -97,10 +101,11 @@ export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [highContrast, setHighContrast] = useState(false);
   const [language, setLanguage] = useState<LanguageCode>('ku');
-  const [activeTab, setActiveTab] = useState<'home' | 'chat' | 'quiz' | 'flashcards' | 'history' | 'settings' | 'imageGen' | 'videoGen' | 'paramedicList'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'chat' | 'quiz' | 'flashcards' | 'history' | 'settings' | 'imageGen' | 'videoGen'>('home');
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // AI Generation state
   const [aiPrompt, setAiPrompt] = useState('');
@@ -109,17 +114,7 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-  // Paramedic feature state
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [paramedics, setParamedics] = useState<Paramedic[]>([]);
-  const [usualItems, setUsualItems] = useState<UsualItem[]>([]);
-  const [showAddPatient, setShowAddPatient] = useState(false);
-  const [showAddParamedic, setShowAddParamedic] = useState(false);
-  const [showAddUsualItem, setShowAddUsualItem] = useState(false);
-  const [newPatient, setNewPatient] = useState({ name: '', condition: '' });
-  const [newParamedic, setNewParamedic] = useState({ name: '', specialty: '' });
-  const [newUsualItem, setNewUsualItem] = useState({ title: '', description: '' });
+  const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
 
   // Quick Action Handlers
   const handleQuickSummarize = () => {
@@ -145,14 +140,25 @@ export default function App() {
   const [quizScore, setQuizScore] = useState(0);
   const [showQuizResult, setShowQuizResult] = useState(false);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [quizError, setQuizError] = useState<string | null>(null);
 
   // Flashcards state
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
+  const [flashcardsError, setFlashcardsError] = useState<string | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const chatInputRef = React.useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (chatInputRef.current) {
+      chatInputRef.current.style.height = 'auto';
+      chatInputRef.current.style.height = `${chatInputRef.current.scrollHeight}px`;
+    }
+  }, [input]);
 
   const t = translations[language];
+  const isRtl = ['ku', 'ar', 'fa'].includes(language);
 
   const scrollToBottom = () => {
     if (scrollRef.current) {
@@ -164,7 +170,8 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, (curUser) => {
       if (!curUser) {
         signInAnonymously(auth).catch(e => {
-          console.error("Anon login fail", e);
+          console.warn("Firebase Anonymous Auth is restricted. Falling back to local storage guest mode.", e);
+          setUser({ uid: 'local-guest', isAnonymous: true } as any);
           setIsAuthLoading(false);
         });
       } else {
@@ -184,124 +191,17 @@ export default function App() {
     };
   }, []);
 
-  // Sync Patients and Paramedics with Firestore
-  useEffect(() => {
-    if (!user) return;
-
-    const patientsPath = `users/${user.uid}/patients`;
-    const patientsRef = collection(db, patientsPath);
-    const qPatients = query(patientsRef, orderBy('timestamp', 'desc'));
-    const unsubscribePatients = onSnapshot(qPatients, (snapshot) => {
-      setPatients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Patient)));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, patientsPath);
-    });
-
-    const paramedicsPath = `users/${user.uid}/paramedics`;
-    const paramedicsRef = collection(db, paramedicsPath);
-    const qParamedics = query(paramedicsRef, orderBy('timestamp', 'desc'));
-    const unsubscribeParamedics = onSnapshot(qParamedics, (snapshot) => {
-      setParamedics(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Paramedic)));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, paramedicsPath);
-    });
-
-    const usualItemsPath = `users/${user.uid}/usualItems`;
-    const usualItemsRef = collection(db, usualItemsPath);
-    const qUsualItems = query(usualItemsRef, orderBy('timestamp', 'desc'));
-    const unsubscribeUsualItems = onSnapshot(qUsualItems, (snapshot) => {
-      setUsualItems(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UsualItem)));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, usualItemsPath);
-    });
-
-    return () => {
-      unsubscribePatients();
-      unsubscribeParamedics();
-      unsubscribeUsualItems();
-    };
-  }, [user]);
-
-  const handleAddPatient = async () => {
-    if (!user || !newPatient.name.trim()) return;
-    const path = `users/${user.uid}/patients`;
-    try {
-      await addDoc(collection(db, path), {
-        ...newPatient,
-        timestamp: Date.now()
-      });
-      setNewPatient({ name: '', condition: '' });
-      setShowAddPatient(false);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, path);
-    }
-  };
-
-  const handleAddParamedic = async () => {
-    if (!user || !newParamedic.name.trim()) return;
-    const path = `users/${user.uid}/paramedics`;
-    try {
-      await addDoc(collection(db, path), {
-        ...newParamedic,
-        timestamp: Date.now()
-      });
-      setNewParamedic({ name: '', specialty: '' });
-      setShowAddParamedic(false);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, path);
-    }
-  };
-
-  const deletePatient = async (id: string) => {
-    if (!user) return;
-    const path = `users/${user.uid}/patients/${id}`;
-    try {
-      await deleteDoc(doc(db, `users/${user.uid}/patients`, id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-    }
-  };
-
-  const deleteParamedic = async (id: string) => {
-    if (!user) return;
-    const path = `users/${user.uid}/paramedics/${id}`;
-    try {
-      await deleteDoc(doc(db, `users/${user.uid}/paramedics`, id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-    }
-  };
-
-  const handleAddUsualItem = async () => {
-    if (!user || !newUsualItem.title.trim()) return;
-    const path = `users/${user.uid}/usualItems`;
-    try {
-      await addDoc(collection(db, path), {
-        ...newUsualItem,
-        timestamp: Date.now()
-      });
-      setNewUsualItem({ title: '', description: '' });
-      setShowAddUsualItem(false);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, path);
-    }
-  };
-
-  const deleteUsualItem = async (id: string) => {
-    if (!user) return;
-    const path = `users/${user.uid}/usualItems/${id}`;
-    try {
-      await deleteDoc(doc(db, `users/${user.uid}/usualItems`, id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-    }
-  };
-
   const handleLogin = async () => {};
   const handleGuestLogin = async () => {};
   const handleLogout = async () => {
     setMessages([]);
     setActiveTab('home');
+  };
+
+  const handleCopyLink = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
   useEffect(() => {
@@ -471,11 +371,12 @@ export default function App() {
       };
       
       setMessages(prev => [...prev, assistantMessage]);
-    } catch (error) {
+    } catch (error: any) {
+      const msgText = error?.message || t.error;
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: t.error,
+        content: msgText,
         timestamp: Date.now()
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -488,6 +389,8 @@ export default function App() {
     if (!input.trim() || isThinking) return;
     setIsThinking(true);
     setActiveTab('quiz');
+    setQuizError(null);
+    setQuizQuestions([]);
     
     try {
       const response = await generateQuiz(input);
@@ -515,9 +418,14 @@ export default function App() {
       } else {
         // Fallback or show error
         console.error("Failed to parse quiz questions");
+        setQuizError(language === 'ku' 
+          ? "بوختەیەک یان وەڵام نەتوانرا بکرێت بە کویز. تکایە بابەتێکی تر بنووسە یان چاتێکی ئاسایی بکە." 
+          : "Failed to generate structured quiz from response."
+        );
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
+      setQuizError(error?.message || t.error);
     } finally {
       setIsThinking(false);
     }
@@ -527,6 +435,8 @@ export default function App() {
     if (!input.trim() || isThinking) return;
     setIsThinking(true);
     setActiveTab('flashcards');
+    setFlashcardsError(null);
+    setFlashcards([]);
     
     try {
       const response = await generateFlashcards(input);
@@ -535,26 +445,32 @@ export default function App() {
       const blocks = response.split('---');
       
       blocks.forEach(block => {
-        const frontMatch = block.match(/Front:\s*(.*)/);
-        const backMatch = block.match(/Back:\s*(.*)/);
-        
-        if (frontMatch && backMatch) {
-          cards.push({
-            id: Math.random().toString(),
-            front: frontMatch[1].trim(),
-            back: backMatch[1].trim(),
-            category: input
-          });
-        }
+         const frontMatch = block.match(/Front:\s*(.*)/);
+         const backMatch = block.match(/Back:\s*(.*)/);
+         
+         if (frontMatch && backMatch) {
+           cards.push({
+             id: Math.random().toString(),
+             front: frontMatch[1].trim(),
+             back: backMatch[1].trim(),
+             category: input
+           });
+         }
       });
       
       if (cards.length > 0) {
         setFlashcards(cards);
         setCurrentFlashcardIndex(0);
         setIsFlipped(false);
+      } else {
+        setFlashcardsError(language === 'ku' 
+          ? "نەتوانرا فلاشکارت دروست بکرێت لەم بابەتە. تکایە بابەتێکی تر بنووسە." 
+          : "Failed to parse flashcards."
+        );
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
+      setFlashcardsError(error?.message || t.error);
     } finally {
       setIsThinking(false);
     }
@@ -624,7 +540,6 @@ export default function App() {
     { id: 'flashcards', icon: BookOpen, label: t.flashcards },
     { id: 'imageGen', icon: ImageIcon, label: t.imageGenerator },
     { id: 'videoGen', icon: Video, label: t.videoGenerator },
-    { id: 'paramedicList', icon: HeartPulse, label: t.paramedicList },
     { id: 'history', icon: History, label: t.history },
     { id: 'settings', icon: Settings, label: t.settings },
   ];
@@ -665,51 +580,125 @@ export default function App() {
       <div className="flex h-[calc(100vh-65px)] lg:h-screen overflow-hidden">
         {/* Sidebar (Desktop) */}
         <aside className={cn(
-          "fixed inset-y-0 right-0 z-50 w-64 bg-card border-l transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0",
-          !isSidebarOpen && "translate-x-full lg:translate-x-0"
+          "fixed inset-y-0 right-0 z-50 bg-card border-l transform transition-all duration-300 ease-in-out lg:relative lg:translate-x-0 flex flex-col shrink-0",
+          isDesktopSidebarCollapsed ? "lg:w-20" : "lg:w-64",
+          !isSidebarOpen && "translate-x-full lg:translate-x-0",
+          !isDesktopSidebarCollapsed && "w-64"
         )}>
-          <div className="flex flex-col h-full">
-            <div className="p-6 hidden lg:flex items-center gap-3 border-b mb-4">
-              <div className="p-2 bg-primary/10 rounded-xl">
-               <Sparkles className="w-6 h-6 text-primary" />
+          <div className="flex flex-col h-full overflow-hidden">
+            {/* Desktop Top Header with collapse toggle */}
+            <div className={cn(
+              "p-4 hidden lg:flex items-center gap-3 border-b mb-4 shrink-0 justify-between transition-all duration-300",
+              isDesktopSidebarCollapsed && "justify-center p-3"
+            )}>
+              <div className="flex items-center gap-2.5 overflow-hidden">
+                <div className="p-2 bg-primary/10 rounded-xl shrink-0">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                </div>
+                {!isDesktopSidebarCollapsed && (
+                  <h1 className="text-xl font-bold font-kurdish truncate animate-fadeIn">{t.appName}</h1>
+                )}
               </div>
-              <h1 className="text-2xl font-bold font-kurdish">{t.appName}</h1>
+              <button 
+                onClick={() => setIsDesktopSidebarCollapsed(prev => !prev)} 
+                className={cn(
+                  "p-2 hover:bg-muted rounded-xl transition-colors shrink-0"
+                )}
+                title={isDesktopSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+              >
+                <Menu className="w-5 h-5 text-muted-foreground hover:text-foreground" />
+              </button>
             </div>
             
-            <div className="lg:hidden p-4 flex justify-between items-center border-b mb-4">
+            {/* Mobile Top Header */}
+            <div className="lg:hidden p-4 flex justify-between items-center border-b mb-4 shrink-0">
                <span className="font-bold text-lg">{t.appName}</span>
                <button onClick={() => setIsSidebarOpen(false)}><X className="w-6 h-6" /></button>
             </div>
 
-            <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
-              {menuItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    setActiveTab(item.id as any);
-                    setIsSidebarOpen(false);
-                  }}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-kurdish",
-                    activeTab === item.id 
-                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" 
-                    : "hover:bg-muted text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <item.icon className="w-5 h-5" />
-                  <span className="font-medium">{item.label}</span>
-                </button>
-              ))}
+            {/* Menu Items */}
+            <nav className={cn(
+              "flex-1 px-3 space-y-1.5 overflow-y-auto scrollbar-none",
+              isDesktopSidebarCollapsed && "lg:px-2"
+            )}>
+              {menuItems.map((item) => {
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id as any);
+                      setIsSidebarOpen(false);
+                    }}
+                    className={cn(
+                      "w-full flex items-center rounded-xl transition-all duration-150 font-kurdish group",
+                      isActive 
+                        ? "bg-primary text-primary-foreground shadow-md shadow-primary/15" 
+                        : "hover:bg-muted text-muted-foreground hover:text-foreground",
+                      isDesktopSidebarCollapsed 
+                        ? "lg:justify-center lg:py-3 px-3 py-3 lg:px-0" 
+                        : "gap-3 px-4 py-3"
+                    )}
+                    title={isDesktopSidebarCollapsed ? item.label : undefined}
+                  >
+                    <item.icon className={cn(
+                      "w-5 h-5 shrink-0 transition-transform group-hover:scale-105 duration-100",
+                      isActive && "text-primary-foreground"
+                    )} />
+                    {!isDesktopSidebarCollapsed && (
+                      <span className="font-medium text-sm truncate">{item.label}</span>
+                    )}
+                    {isDesktopSidebarCollapsed && (
+                      <span className="lg:hidden font-medium text-sm truncate">{item.label}</span>
+                    )}
+                  </button>
+                );
+              })}
             </nav>
 
-            <div className="p-4 border-t space-y-4">
+            {/* Sidebar Footer */}
+            <div className={cn(
+              "p-4 border-t space-y-3 shrink-0 bg-card/60",
+              isDesktopSidebarCollapsed && "lg:p-2 lg:space-y-4"
+            )}>
+               {/* Dark mode button */}
+               {isDesktopSidebarCollapsed ? (
+                 <button 
+                  onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
+                  className="hidden lg:flex w-12 h-12 items-center justify-center bg-muted rounded-xl hover:bg-muted/80 transition-colors mx-auto"
+                  title={theme === 'light' ? t.darkMode : t.lightMode}
+                 >
+                   {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+                 </button>
+               ) : (
+                 <button 
+                  onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-muted rounded-xl hover:bg-muted/80 transition-colors"
+                 >
+                   <div className="flex items-center gap-3">
+                     {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+                     <span className="font-kurdish text-sm">{theme === 'light' ? t.darkMode : t.lightMode}</span>
+                   </div>
+                   <div className={cn(
+                     "w-10 h-5 rounded-full p-1 transition-colors duration-300",
+                     theme === 'dark' ? "bg-primary" : "bg-slate-300"
+                   )}>
+                     <div className={cn(
+                       "w-3 h-3 bg-white rounded-full transition-transform duration-300",
+                       theme === 'dark' ? "translate-x-0" : "translate-x-5"
+                     )} />
+                   </div>
+                 </button>
+               )}
+               
+               {/* Mobile theme switch (always full length on mobile viewport) */}
                <button 
                 onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
-                className="w-full flex items-center justify-between px-4 py-3 bg-muted rounded-xl hover:bg-muted/80 transition-colors"
+                className="lg:hidden w-full flex items-center justify-between px-4 py-3 bg-muted rounded-xl hover:bg-muted/80 transition-colors"
                >
                  <div className="flex items-center gap-3">
                    {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
-                   <span className="font-kurdish">{theme === 'light' ? t.darkMode : t.lightMode}</span>
+                   <span className="font-kurdish text-sm">{theme === 'light' ? t.darkMode : t.lightMode}</span>
                  </div>
                  <div className={cn(
                    "w-10 h-5 rounded-full p-1 transition-colors duration-300",
@@ -717,19 +706,29 @@ export default function App() {
                  )}>
                    <div className={cn(
                      "w-3 h-3 bg-white rounded-full transition-transform duration-300",
-                     theme === 'dark' ? "-translate-x-5" : "translate-x-0"
+                     theme === 'dark' ? "translate-x-0" : "translate-x-5"
                    )} />
                  </div>
                </button>
                
-                <div className="flex items-center gap-2 p-2 px-1">
-                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold shadow-inner overflow-hidden">
-                    <Users className="w-5 h-5" />
-                  </div>
-                  <div className="flex flex-col overflow-hidden">
-                    <span className="text-sm font-bold truncate">{(language === 'ku' ? 'میوان' : 'Guest')}</span>
-                  </div>
-                </div>
+               {/* User Profiles */}
+               <div className={cn(
+                 "flex items-center gap-2 p-2 px-1",
+                 isDesktopSidebarCollapsed && "lg:justify-center lg:p-1"
+               )}>
+                 <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold shadow-inner overflow-hidden shrink-0">
+                   <Users className="w-5 h-5" />
+                 </div>
+                 {(!isDesktopSidebarCollapsed && (
+                   <div className="flex flex-col overflow-hidden">
+                     <span className="text-sm font-bold truncate">{(language === 'ku' ? 'میوان' : 'Guest')}</span>
+                   </div>
+                 )) || (
+                   <div className="lg:hidden flex flex-col overflow-hidden">
+                     <span className="text-sm font-bold truncate">{(language === 'ku' ? 'میوان' : 'Guest')}</span>
+                   </div>
+                 )}
+               </div>
             </div>
           </div>
         </aside>
@@ -744,6 +743,9 @@ export default function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 relative overflow-hidden flex flex-col bg-background/50 backdrop-blur-3xl">
+          {/* Ambient desktop glows */}
+          <div className="absolute top-0 left-0 w-[35rem] h-[35rem] bg-primary/5 rounded-full filter blur-[100px] pointer-events-none -translate-x-12 -translate-y-12 hidden lg:block" />
+          <div className="absolute bottom-0 right-0 w-[35rem] h-[35rem] bg-purple-500/5 rounded-full filter blur-[100px] pointer-events-none translate-x-12 translate-y-12 hidden lg:block" />
           <AnimatePresence mode="wait">
             {activeTab === 'home' && (
               <motion.div 
@@ -847,37 +849,6 @@ export default function App() {
                     </motion.div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-                    <motion.div 
-                      whileHover={{ scale: 1.02 }}
-                      onClick={() => setActiveTab('paramedicList')}
-                      className="bg-card border p-8 rounded-[2rem] shadow-xl cursor-pointer hover:border-red-500 transition-all flex items-center gap-6"
-                    >
-                       <div className="bg-red-100 dark:bg-red-900/30 w-16 h-16 rounded-2xl flex items-center justify-center text-red-600 shrink-0">
-                         <HeartPulse className="w-8 h-8" />
-                       </div>
-                       <div>
-                         <h4 className="text-2xl font-bold font-kurdish mb-1">{t.paramedicList}</h4>
-                         <p className="text-muted-foreground font-kurdish">{t.paramedicDesc}</p>
-                       </div>
-                    </motion.div>
-                    <motion.div 
-                      whileHover={{ scale: 1.02 }}
-                      onClick={() => setActiveTab('paramedicList')} // It's actually the same tab currently, or I should have a separate tab for usual list? 
-                      // Wait, I put them both in the 'paramedicList' tab in the code. 
-                      // Let's re-check the Tab display logic for paramedicList
-                      className="bg-card border p-8 rounded-[2rem] shadow-xl cursor-pointer hover:border-emerald-500 transition-all flex items-center gap-6"
-                    >
-                       <div className="bg-emerald-100 dark:bg-emerald-900/30 w-16 h-16 rounded-2xl flex items-center justify-center text-emerald-600 shrink-0">
-                         <CheckCircle2 className="w-8 h-8" />
-                       </div>
-                       <div>
-                         <h4 className="text-2xl font-bold font-kurdish mb-1">{t.usualList}</h4>
-                         <p className="text-muted-foreground font-kurdish">{t.usualDesc}</p>
-                       </div>
-                    </motion.div>
-                  </div>
-
                   {/* Study Tip Card */}
                   <motion.div 
                     initial={{ opacity: 0, y: 20 }}
@@ -930,153 +901,234 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="flex-1 flex flex-col h-full max-w-4xl mx-auto w-full p-4 md:p-6"
+                className="flex-1 flex flex-col h-full max-w-5xl mx-auto w-full p-3 sm:p-6 overflow-hidden relative"
               >
-                <div className="flex-1 overflow-y-auto space-y-6 pb-24 scrollbar-hide" ref={scrollRef}>
+                {/* Chat Top Header - Sleek and subtle like Gemini */}
+                <div className="flex h-14 items-center justify-between border-b border-border/20 pb-3 mb-6 shrink-0 px-2 font-kurdish">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#4285F4] via-[#9B72CB] to-[#D96570] flex items-center justify-center text-white shrink-0 shadow-sm animate-pulse">
+                      <Sparkles className="w-4.5 h-4.5" />
+                    </div>
+                    <span className="font-extrabold text-base md:text-lg tracking-tight bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">{t.studyAssistant}</span>
+                  </div>
+                  <button 
+                    onClick={() => setMessages([{ id: '1', role: 'assistant', content: t.welcomeMessage, timestamp: Date.now() }])}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-muted/60 hover:bg-destructive/10 hover:text-destructive rounded-full transition-all text-muted-foreground text-xs font-bold border border-border/35"
+                    title="Clear Chat"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{language === 'ku' ? 'پاککردنەوە' : 'Clear'}</span>
+                  </button>
+                </div>
+
+                {/* Messages stream */}
+                <div className="flex-1 overflow-y-auto space-y-8 pb-4 px-1 scrollbar-hide flex flex-col" ref={scrollRef}>
+                  {/* Beautiful minimal empty state */}
+                  {messages.length <= 1 && (
+                    <div className="py-10 md:py-16 px-4 flex flex-col justify-center items-center font-kurdish my-auto">
+                      <div className="mb-6 relative">
+                        <span className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-tr from-[#4285F4] via-[#9B72CB] to-[#D96570] text-white shadow-xl animate-pulse">
+                          <Sparkles className="w-8 h-8" />
+                        </span>
+                        <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-pink-500"></span>
+                        </span>
+                      </div>
+                      <h2 className="text-4xl md:text-5xl lg:text-5xl font-black tracking-tight mb-4 text-center bg-gradient-to-r from-[#4285F4] via-[#9B72CB] to-[#D96570] bg-clip-text text-transparent">
+                        {language === 'ku' ? 'سڵاو، خوێندکار' : 'Hello, Learner'}
+                      </h2>
+                      <p className="text-base md:text-lg text-slate-500 dark:text-zinc-400 font-medium text-center max-w-lg leading-relaxed w-full">
+                        {language === 'ku' 
+                          ? 'من لێرەم بۆ ئەوەی بەیەکەوە بخوێنین. هەر پرسیارێک یان کورتکراوەیەک کە دەتەوێت لێرە بینووسە!' 
+                          : 'I am here to study together. Ask me any scientific question, draft summaries, or request study planners!'}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Message Items and Content Stream */}
                   {messages.map((msg) => (
                     <motion.div 
                       key={msg.id}
-                      initial={{ opacity: 0, y: 10 }}
+                      initial={{ opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
                       className={cn(
-                        "flex w-full mb-4",
-                        msg.role === 'user' ? "justify-start" : "justify-end"
+                        "flex w-full",
+                        msg.role === 'user' 
+                          ? (isRtl ? "justify-start" : "justify-end") 
+                          : (isRtl ? "justify-end" : "justify-start")
                       )}
                     >
-                      <motion.div 
-                        whileHover={{ scale: 1.01 }}
-                        className={cn(
-                          "max-w-[85%] p-4 md:p-5 rounded-2xl shadow-sm relative group break-words",
-                          msg.role === 'user' 
-                            ? "bg-primary text-white rounded-tr-none" 
-                            : "bg-card border rounded-tl-none"
-                        )}
-                      >
-                        <div className={cn(
-                          "prose prose-sm md:prose-base dark:prose-invert font-kurdish leading-relaxed max-w-full",
-                          msg.role === 'user' ? "[&_*]:text-white text-white" : "text-foreground"
-                        )}>
-                          <Markdown>{msg.content}</Markdown>
+                      {msg.role === 'user' ? (
+                        <motion.div 
+                          whileHover={{ scale: 1.002 }}
+                          dir="auto"
+                          className="max-w-[85%] sm:max-w-[70%] p-4 px-6 rounded-[28px] rounded-tr-sm bg-gradient-to-br from-blue-600 to-indigo-600 dark:from-blue-950 dark:to-indigo-950 text-white dark:text-zinc-50 break-words font-kurdish border border-blue-500/20 dark:border-primary/30 shadow-md"
+                        >
+                          <div className="prose prose-sm md:prose-base dark:prose-invert font-kurdish leading-relaxed max-w-full text-white dark:text-zinc-50" dir="auto">
+                            <Markdown>{msg.content}</Markdown>
+                          </div>
+                          <div className="text-[10px] mt-2 opacity-70 text-slate-100 dark:text-zinc-400 text-right font-sans">
+                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </motion.div>
+                      ) : (
+                        <div className="flex gap-4 w-full justify-start items-start max-w-3xl">
+                          {/* Gemini Beautiful colored gradient icon next to response with no background cards */}
+                          <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#4285F4] via-[#9B72CB] to-[#D96570] flex items-center justify-center text-white shrink-0 mt-0.5 shadow-sm">
+                            <Sparkles className="w-4.5 h-4.5 text-white" />
+                          </div>
+                          <div className="flex-1 min-w-0 pt-1.5 px-1.5">
+                            <div className="prose prose-sm md:prose-base dark:prose-invert font-kurdish leading-relaxed max-w-full text-foreground" dir="auto">
+                              <Markdown>{msg.content}</Markdown>
+                            </div>
+                            <div className="text-[10px] mt-2.5 opacity-50 text-muted-foreground font-sans">
+                              {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
                         </div>
-                        <div className={cn(
-                          "text-[10px] mt-2 opacity-60 flex items-center gap-1",
-                          msg.role === 'user' ? "text-white/80" : "text-muted-foreground"
-                        )}>
-                          {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </motion.div>
+                      )}
                     </motion.div>
                   ))}
+
+                  {/* Thinking Loader */}
                   {isThinking && (
-                    <div className="flex justify-start w-full">
-                      <div className="bg-card border p-4 rounded-2xl rounded-tr-none flex items-center gap-2">
-                        <div className="flex space-x-1 rtl:space-x-reverse">
-                          <motion.div 
-                            animate={{ scale: [1, 1.2, 1] }} 
-                            transition={{ repeat: Infinity, duration: 1 }}
-                            className="w-2 h-2 bg-primary rounded-full" 
-                          />
-                          <motion.div 
-                            animate={{ scale: [1, 1.2, 1] }} 
-                            transition={{ repeat: Infinity, duration: 1, delay: 0.2 }}
-                            className="w-2 h-2 bg-primary rounded-full" 
-                          />
-                          <motion.div 
-                            animate={{ scale: [1, 1.2, 1] }} 
-                            transition={{ repeat: Infinity, duration: 1, delay: 0.4 }}
-                            className="w-2 h-2 bg-primary rounded-full" 
-                          />
+                    <div className={cn(
+                      "flex w-full",
+                      isRtl ? "justify-end" : "justify-start"
+                    )}>
+                      <div className="flex gap-4 w-full justify-start items-start max-w-3xl">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#4285F4] via-[#9B72CB] to-[#D96570] flex items-center justify-center text-white shrink-0 mt-0.5 shadow-sm animate-pulse">
+                          <Sparkles className="w-4.5 h-4.5 text-white" />
                         </div>
-                        <span className="text-xs text-muted-foreground font-kurdish">{t.thinking}</span>
+                        <div className="flex items-center gap-3 pt-2">
+                          <div className="flex space-x-1.5 rtl:space-x-reverse">
+                            <motion.div 
+                              animate={{ scale: [1, 1.3, 1], opacity: [0.4, 1, 0.4] }} 
+                              transition={{ repeat: Infinity, duration: 1.2, ease: "easeInOut" }}
+                              className="w-2.5 h-2.5 bg-[#4285F4] rounded-full" 
+                            />
+                            <motion.div 
+                              animate={{ scale: [1, 1.3, 1], opacity: [0.4, 1, 0.4] }} 
+                              transition={{ repeat: Infinity, duration: 1.2, delay: 0.2, ease: "easeInOut" }}
+                              className="w-2.5 h-2.5 bg-[#9B72CB] rounded-full" 
+                            />
+                            <motion.div 
+                              animate={{ scale: [1, 1.3, 1], opacity: [0.4, 1, 0.4] }} 
+                              transition={{ repeat: Infinity, duration: 1.2, delay: 0.4, ease: "easeInOut" }}
+                              className="w-2.5 h-2.5 bg-[#D96570] rounded-full" 
+                            />
+                          </div>
+                          <span className="text-xs font-semibold text-muted-foreground/80 font-kurdish tracking-wide ml-1">{t.thinking}</span>
+                        </div>
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Floating Clear Chat Button */}
-                <button 
-                  onClick={() => setMessages([{ id: '1', role: 'assistant', content: t.welcomeMessage, timestamp: Date.now() }])}
-                  className="absolute top-4 left-4 bg-muted/80 backdrop-blur-md p-2 rounded-lg hover:bg-destructive hover:text-white transition-all text-muted-foreground shadow-sm"
-                  title="Clear Chat"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-
-                {/* Input Area */}
-                <div className="absolute bottom-6 left-4 right-4 max-w-4xl mx-auto">
-                  <div className="bg-card border rounded-2xl shadow-2xl p-2 flex flex-col gap-2 focus-within:ring-2 ring-primary/20 transition-all">
+                {/* Input Prompt Capsule Area */}
+                <div className="w-full max-w-4xl mx-auto pt-4 pb-2 z-10 shrink-0">
+                  <div className="bg-slate-100/90 dark:bg-zinc-900 border border-slate-200/50 dark:border-zinc-805/80 rounded-[32px] shadow-sm p-2 relative flex flex-col gap-2 focus-within:ring-2 focus-within:ring-[#9B72CB]/40 transition-all duration-300">
                     {selectedImage && (
-                      <div className="px-4 pt-2 relative">
-                        <img src={selectedImage} alt="Selected" className="h-20 w-20 object-cover rounded-lg border" />
-                        <button 
-                          onClick={() => setSelectedImage(null)}
-                          className="absolute top-0 right-14 bg-destructive text-white rounded-full p-1 shadow-lg"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
+                      <div className="px-4 pt-2 relative flex items-center">
+                        <div className="relative">
+                          <img src={selectedImage} alt="Selected" className="h-16 w-16 object-cover rounded-xl border border-muted/50" />
+                          <button 
+                            onClick={() => setSelectedImage(null)}
+                            className="absolute -top-1.5 -right-1.5 bg-destructive text-white rounded-full p-1 shadow-md hover:scale-110 transition-transform"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
                     )}
                     
-                    <div className="flex items-end gap-2">
-                       <textarea
+                    <div className="flex items-center gap-2 px-2">
+                      {/* Left Side: Upload Buttons & Quiz Button */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <label className="p-2.5 text-muted-foreground hover:text-primary hover:bg-muted/70 rounded-full transition-all cursor-pointer" title="Upload Image">
+                          <ImageIcon className="w-5 h-5" />
+                          <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                        </label>
+                        
+                        <button 
+                          onClick={startCamera}
+                          className="p-2.5 text-muted-foreground hover:text-primary hover:bg-muted/70 rounded-full transition-all hidden sm:inline-flex"
+                          title="Camera"
+                        >
+                          <Camera className="w-5 h-5" />
+                        </button>
+
+                        <button 
+                          onClick={handleGenerateQuiz}
+                          title={t.generateQuiz}
+                          className="p-2.5 text-muted-foreground hover:text-primary hover:bg-muted/70 rounded-full transition-all hidden sm:inline-flex"
+                        >
+                          <BrainCircuit className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      {/* Center: Beautiful auto-resizing search bar */}
+                      <textarea
+                        ref={chatInputRef}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         placeholder={t.askAnything}
                         rows={1}
+                        dir="auto"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
                             handleSendMessage();
                           }
                         }}
-                        className="flex-1 bg-transparent border-none focus:ring-0 resize-none py-3 px-4 min-h-[50px] max-h-[200px] font-kurdish text-lg"
+                        className="flex-1 bg-transparent border-none focus:ring-0 resize-none py-2 px-3 max-h-[160px] font-kurdish text-sm md:text-base text-slate-900 dark:text-white outline-none text-start placeholder-slate-400 dark:placeholder-zinc-400"
                       />
-                      <div className="flex items-center gap-1 pb-1 pr-1 rtl:pl-1 rtl:pr-0">
+
+                      {/* Right Side: Microphone & Send Button */}
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <button 
                           onClick={toggleRecording}
                           title="Voice Input"
                           className={cn(
-                            "p-3 rounded-xl transition-all duration-300",
-                            isRecording ? "bg-destructive text-white animate-pulse" : "text-primary hover:bg-primary/10"
+                            "p-2.5 rounded-full transition-all duration-300",
+                            isRecording ? "bg-destructive text-white animate-pulse" : "text-muted-foreground hover:text-primary hover:bg-muted/70"
                           )}
                         >
-                          {isRecording ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+                          {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
                         </button>
-                        
-                        <div className="relative group/photo">
-                          <button 
-                            onClick={startCamera}
-                            className="p-3 text-primary hover:bg-primary/10 rounded-xl transition-colors"
-                          >
-                            <Camera className="w-6 h-6" />
-                          </button>
-                        </div>
 
-                        <label className="p-3 text-primary hover:bg-primary/10 rounded-xl transition-colors cursor-pointer">
-                          <ImageIcon className="w-6 h-6" />
-                          <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-                        </label>
-
+                        {/* Mobile buttons */}
                         <button 
                           onClick={handleGenerateQuiz}
                           title={t.generateQuiz}
-                          className="p-3 text-primary hover:bg-primary/10 rounded-xl transition-colors"
+                          className="p-2.5 text-muted-foreground hover:text-primary hover:bg-muted/70 rounded-full transition-all inline-flex sm:hidden"
                         >
-                          <BrainCircuit className="w-6 h-6" />
+                          <BrainCircuit className="w-5 h-5" />
                         </button>
-                        
-                        <motion.button 
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
+
+                        <button 
                           onClick={handleSendMessage}
                           disabled={isThinking || (!input.trim() && !selectedImage)}
-                          className="p-3 bg-primary text-primary-foreground rounded-xl hover:shadow-lg shadow-primary/20 transition-all active:scale-95 disabled:opacity-50"
+                          className={cn(
+                            "p-3 rounded-full transition-all duration-300 shrink-0 shadow-sm",
+                            (isThinking || (!input.trim() && !selectedImage)) 
+                              ? "bg-muted text-muted-foreground opacity-40 cursor-not-allowed" 
+                              : "bg-primary text-primary-foreground hover:shadow-md hover:scale-105 active:scale-95"
+                          )}
                         >
-                          <Send className="w-6 h-6" />
-                        </motion.button>
+                          <Send className="w-4.5 h-4.5 rtl:rotate-180" />
+                        </button>
                       </div>
                     </div>
                   </div>
+                  
+                  {/* Subtle Gemini Disclaimer at target footer */}
+                  <p className="text-[10px] text-center text-muted-foreground/60 font-kurdish mt-2 tracking-wide leading-relaxed max-w-md mx-auto">
+                    {language === 'ku' 
+                      ? 'زانیار AI دەتوانێت هەڵە بکات. زانیارییە گرنگەکان دووجار ڕاست بکەرەوە.' 
+                      : 'Zanyar AI can make mistakes. Consider checking important information.'}
+                  </p>
                 </div>
 
                 {/* Camera Modal */}
@@ -1210,6 +1262,24 @@ export default function App() {
                       </div>
                     </div>
                   )
+                ) : quizError ? (
+                  <div className="bg-card border rounded-3xl p-8 max-w-lg w-full text-center space-y-6 shadow-xl">
+                    <div className="bg-destructive/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto text-destructive">
+                      <BrainCircuit className="w-10 h-10" />
+                    </div>
+                    <h2 className="text-2xl font-bold font-kurdish text-destructive">
+                      {language === 'ku' ? "کێشەیەک لە دروستکردنی کویز ڕوویدا" : "Failed to generate Quiz"}
+                    </h2>
+                    <p className="text-muted-foreground font-kurdish text-base leading-relaxed whitespace-pre-line">
+                      {quizError}
+                    </p>
+                    <button 
+                      onClick={() => { setQuizError(null); setActiveTab('chat'); }}
+                      className="w-full py-3 bg-primary text-primary-foreground font-bold font-kurdish rounded-2xl text-lg hover:shadow-lg transition-all"
+                    >
+                      {language === 'ku' ? "گەڕانەوە بۆ لای چات" : "Back to Chat"}
+                    </button>
+                  </div>
                 ) : (
                   <div className="text-center space-y-6">
                     <div className="bg-primary/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto">
@@ -1291,6 +1361,24 @@ export default function App() {
                       </button>
                     </div>
                   </div>
+                ) : flashcardsError ? (
+                  <div className="bg-card border rounded-3xl p-8 max-w-lg w-full text-center space-y-6 shadow-xl">
+                    <div className="bg-destructive/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto text-destructive">
+                      <BookOpen className="w-10 h-10" />
+                    </div>
+                    <h2 className="text-2xl font-bold font-kurdish text-destructive">
+                      {language === 'ku' ? "کێشەیەک لە دروستکردنی فلاشکارت ڕوویدا" : "Failed to generate Flashcards"}
+                    </h2>
+                    <p className="text-muted-foreground font-kurdish text-base leading-relaxed whitespace-pre-line">
+                      {flashcardsError}
+                    </p>
+                    <button 
+                      onClick={() => { setFlashcardsError(null); setActiveTab('chat'); }}
+                      className="w-full py-3 bg-primary text-primary-foreground font-bold font-kurdish rounded-2xl text-lg hover:shadow-lg transition-all"
+                    >
+                      {language === 'ku' ? "گەڕانەوە بۆ لای چات" : "Back to Chat"}
+                    </button>
+                  </div>
                 ) : (
                   <div className="text-center space-y-6">
                     <div className="bg-primary/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto">
@@ -1361,13 +1449,13 @@ export default function App() {
                         referrerPolicy="no-referrer"
                       />
                       <div className="absolute top-8 right-8 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <a 
+                        <a 
                           href={generatedImage} 
                           download="zanyar-image.png"
                           className="p-3 bg-white/20 backdrop-blur-md rounded-xl text-white hover:bg-white/40 transition-colors"
-                         >
-                           <Download className="w-6 h-6" />
-                         </a>
+                        >
+                          <Download className="w-6 h-6" />
+                        </a>
                       </div>
                     </motion.div>
                   )}
@@ -1378,58 +1466,74 @@ export default function App() {
             {activeTab === 'videoGen' && (
               <motion.div 
                 key="videoGen"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="flex-1 overflow-y-auto p-6 md:p-10"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                className="flex-1 flex flex-col items-center justify-center p-6 max-w-2xl mx-auto w-full"
               >
-                <div className="max-w-4xl mx-auto">
-                  <header className="mb-10 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <h2 className="text-3xl font-bold font-kurdish">{t.videoGenerator}</h2>
-                    </div>
-                    <button onClick={() => setActiveTab('home')} className="p-3 bg-muted rounded-2xl hover:bg-muted/80 transition-colors">
-                      <X className="w-6 h-6" />
+                <div className="bg-card border p-10 rounded-[2.5rem] shadow-2xl w-full text-center space-y-8 relative overflow-hidden">
+                  {/* Subtle decorative glowing background */}
+                  <div className="absolute -top-24 -left-20 w-48 h-48 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
+                  <div className="absolute -bottom-24 -right-20 w-48 h-48 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
+                  
+                  {/* Close/Back button in header style */}
+                  <div className="absolute top-6 right-6">
+                    <button 
+                      onClick={() => setActiveTab('home')} 
+                      className="p-2.5 bg-muted rounded-xl hover:bg-muted/80 transition-colors"
+                      title={t.backToHome}
+                    >
+                      <X className="w-5 h-5 text-muted-foreground" />
                     </button>
-                  </header>
+                  </div>
 
-                   <div className="bg-card border rounded-[2rem] p-8 shadow-xl mb-8">
-                    <div className="flex flex-col gap-6">
-                      <textarea 
-                        value={aiPrompt}
-                        onChange={(e) => setAiPrompt(e.target.value)}
-                        placeholder={t.promptPlaceholder}
-                        className="w-full bg-muted/50 border-none rounded-2xl p-6 min-h-[150px] font-kurdish text-lg focus:ring-2 ring-primary/20 transition-all resize-none"
-                      />
-                      <button 
-                        onClick={handleStartVideoGen}
-                        disabled={isGenerating || !aiPrompt.trim()}
-                        className={cn(
-                          "w-full py-5 rounded-2xl font-bold text-xl transition-all flex items-center justify-center gap-3",
-                          isGenerating || !aiPrompt.trim() 
-                            ? "bg-muted text-muted-foreground cursor-not-allowed" 
-                            : "bg-primary text-primary-foreground hover:shadow-xl hover:shadow-primary/20 active:scale-95"
-                        )}
-                      >
-                        {isGenerating ? <Sparkles className="w-6 h-6 animate-pulse" /> : <Video className="w-6 h-6" />}
-                        <span>{isGenerating ? generationStatus || t.generating : t.generateVideo}</span>
-                      </button>
+                  <div className="space-y-6 pt-4">
+                    {/* Glowing animated Icon Container */}
+                    <div className="relative w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center mx-auto text-primary border border-primary/20 shadow-lg shadow-primary/5">
+                      <Video className="w-10 h-10 animate-pulse" />
+                      <span className="absolute -top-1 -right-1 bg-primary text-[9px] text-primary-foreground font-black tracking-wider uppercase px-2 py-0.5 rounded-full shadow-md animate-bounce">
+                        {language === 'ku' ? "بەم زووانە" : "SOON"}
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h2 className="text-3xl font-extrabold font-kurdish text-foreground tracking-tight">
+                        {t.videoGenerator}
+                      </h2>
+                      <p className="text-primary font-bold text-lg font-kurdish">
+                        {t.comingSoon}
+                      </p>
+                    </div>
+
+                    <p className="text-muted-foreground font-kurdish text-base leading-relaxed max-w-md mx-auto">
+                      {t.videoComingSoonDesc}
+                    </p>
+                  </div>
+
+                  {/* Disabled Input Simulation with Badge */}
+                  <div className="mt-8 p-6 bg-muted/30 border border-border/80 rounded-2xl relative select-none cursor-not-allowed">
+                    <div className="absolute inset-0 bg-background/5 rounded-2xl backdrop-blur-[1px]" />
+                    <div className="text-left filter blur-[1.5px] opacity-25 font-kurdish pointer-events-none">
+                      <div className="h-4 bg-foreground/30 w-3/4 rounded-full mb-3" />
+                      <div className="h-4 bg-foreground/35 w-1/2 rounded-full mb-4" />
+                      <div className="h-12 bg-primary/40 rounded-xl" />
                     </div>
                   </div>
 
-                  {generatedVideoUrl && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="bg-card border rounded-[2rem] p-4 shadow-2xl overflow-hidden"
+                  <div className="pt-4 flex flex-col sm:flex-row gap-3">
+                    <button 
+                      onClick={() => setActiveTab('home')}
+                      className="flex-1 py-4 bg-primary text-primary-foreground font-bold font-kurdish rounded-2xl text-base hover:shadow-lg hover:shadow-primary/10 transition-all active:scale-[0.98]"
                     >
-                      <video 
-                        src={generatedVideoUrl} 
-                        controls 
-                        className="w-full h-auto rounded-2xl"
-                      />
-                    </motion.div>
-                  )}
+                      {t.backToHome}
+                    </button>
+                    <button 
+                      onClick={() => setActiveTab('chat')}
+                      className="flex-1 py-4 bg-muted text-muted-foreground font-bold font-kurdish rounded-2xl text-base hover:bg-muted/80 transition-all active:scale-[0.98]"
+                    >
+                      {t.studyAssistant}
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -1470,347 +1574,6 @@ export default function App() {
                     <p className="text-sm text-muted-foreground font-kurdish line-clamp-2">{language === 'ku' ? 'چۆنێتی چارەسەرکردنی هاوکێشەی پلە دوو..' : 'How to solve second-degree equations...'}</p>
                   </div>
                 </div>
-              </motion.div>
-            )}
-
-            {activeTab === 'paramedicList' && (
-              <motion.div 
-                key="paramedicList"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="flex-1 overflow-y-auto p-6 md:p-10"
-              >
-                <div className="max-w-5xl mx-auto">
-                  <header className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                      <h2 className="text-3xl font-bold font-kurdish mb-2">{t.paramedicList}</h2>
-                      <p className="text-muted-foreground font-kurdish">{t.paramedicDesc}</p>
-                    </div>
-                    <div className="flex gap-2">
-                       <button 
-                        onClick={() => setShowAddPatient(true)}
-                        className="flex items-center gap-2 px-4 py-3 bg-primary text-primary-foreground rounded-2xl font-bold hover:shadow-lg transition-all active:scale-95"
-                       >
-                         <Plus className="w-5 h-5" />
-                         <span className="font-kurdish">{t.addPatient}</span>
-                       </button>
-                       <button 
-                        onClick={() => setShowAddParamedic(true)}
-                        className="flex items-center gap-2 px-4 py-3 bg-secondary text-secondary-foreground rounded-2xl font-bold hover:shadow-lg transition-all active:scale-95 border"
-                       >
-                         <Plus className="w-5 h-5" />
-                         <span className="font-kurdish">{t.addParamedic}</span>
-                       </button>
-                       <button 
-                        onClick={() => setShowAddUsualItem(true)}
-                        className="flex items-center gap-2 px-4 py-3 bg-muted text-foreground rounded-2xl font-bold hover:shadow-lg transition-all active:scale-95 border"
-                       >
-                         <Plus className="w-5 h-5" />
-                         <span className="font-kurdish">{t.addItem}</span>
-                       </button>
-                    </div>
-                  </header>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-                    {/* Patients Section */}
-                    <div className="space-y-6">
-                      <div className="flex items-center gap-3 border-b-2 border-primary pb-2 font-kurdish">
-                        <Activity className="w-6 h-6 text-primary" />
-                        <h3 className="text-xl font-bold">{t.patients}</h3>
-                        <span className="ml-auto bg-primary/10 text-primary px-2 py-0.5 rounded text-xs font-bold">{patients.length}</span>
-                      </div>
-                      <div className="space-y-4">
-                        {patients.map((patient) => (
-                          <motion.div 
-                            key={patient.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="bg-card border p-5 rounded-3xl group shadow-sm hover:shadow-md transition-all border-l-4 border-l-primary"
-                          >
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h4 className="font-bold text-lg font-kurdish">{patient.name}</h4>
-                                <p className="text-muted-foreground font-kurdish mt-1 whitespace-pre-wrap">{patient.condition}</p>
-                                <span className="text-[10px] text-muted-foreground mt-2 block">
-                                  {new Date(patient.timestamp).toLocaleString()}
-                                </span>
-                              </div>
-                              <button 
-                                onClick={() => deletePatient(patient.id)}
-                                className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-all"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </motion.div>
-                        ))}
-                        {patients.length === 0 && (
-                          <div className="text-center py-10 opacity-30">
-                            <Activity className="w-12 h-12 mx-auto mb-2" />
-                            <p className="font-kurdish">{t.noPatients}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Paramedics Section */}
-                    <div className="space-y-6">
-                      <div className="flex items-center gap-3 border-b-2 border-secondary pb-2 font-kurdish">
-                        <Users className="w-6 h-6 text-secondary-foreground" />
-                        <h3 className="text-xl font-bold">{t.paramedics}</h3>
-                        <span className="ml-auto bg-secondary/20 text-secondary-foreground px-2 py-0.5 rounded text-xs font-bold">{paramedics.length}</span>
-                      </div>
-                      <div className="space-y-4">
-                        {paramedics.map((paramedic) => (
-                          <motion.div 
-                            key={paramedic.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="bg-card border p-5 rounded-3xl group shadow-sm hover:shadow-md transition-all border-l-4 border-l-secondary"
-                          >
-                            <div className="flex justify-between items-start">
-                              <div className="flex gap-4">
-                                <div className="w-12 h-12 rounded-2xl bg-secondary/10 flex items-center justify-center text-secondary-foreground shrink-0">
-                                  <Stethoscope className="w-6 h-6" />
-                                </div>
-                                <div>
-                                  <h4 className="font-bold text-lg font-kurdish">{paramedic.name}</h4>
-                                  <p className="text-muted-foreground font-kurdish mt-1">{paramedic.specialty}</p>
-                                  <span className="text-[10px] text-muted-foreground mt-2 block">
-                                    {new Date(paramedic.timestamp).toLocaleString()}
-                                  </span>
-                                </div>
-                              </div>
-                              <button 
-                                onClick={() => deleteParamedic(paramedic.id)}
-                                className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-all"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </motion.div>
-                        ))}
-                        {paramedics.length === 0 && (
-                          <div className="text-center py-10 opacity-30">
-                            <Users className="w-12 h-12 mx-auto mb-2" />
-                            <p className="font-kurdish">{t.noParamedics}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Usual Items Section */}
-                    <div className="space-y-6">
-                      <div className="flex items-center gap-3 border-b-2 border-muted-foreground pb-2 font-kurdish">
-                        <CheckCircle2 className="w-6 h-6 text-muted-foreground" />
-                        <h3 className="text-xl font-bold">{t.usualList}</h3>
-                        <span className="ml-auto bg-muted text-muted-foreground px-2 py-0.5 rounded text-xs font-bold">{usualItems.length}</span>
-                      </div>
-                      <div className="space-y-4">
-                        {usualItems.map((item) => (
-                          <motion.div 
-                            key={item.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="bg-card border p-5 rounded-3xl group shadow-sm hover:shadow-md transition-all border-l-4 border-l-muted-foreground"
-                          >
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h4 className="font-bold text-lg font-kurdish">{item.title}</h4>
-                                <p className="text-muted-foreground font-kurdish mt-1 whitespace-pre-wrap">{item.description}</p>
-                                <span className="text-[10px] text-muted-foreground mt-2 block">
-                                  {new Date(item.timestamp).toLocaleString()}
-                                </span>
-                              </div>
-                              <button 
-                                onClick={() => deleteUsualItem(item.id)}
-                                className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-all"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </motion.div>
-                        ))}
-                        {usualItems.length === 0 && (
-                          <div className="text-center py-10 opacity-30">
-                            <CheckCircle2 className="w-12 h-12 mx-auto mb-2" />
-                            <p className="font-kurdish">{t.noItems}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Add Patient Modal */}
-                <AnimatePresence>
-                  {showAddPatient && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-                      <motion.div 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={() => setShowAddPatient(false)}
-                        className="absolute inset-0 bg-black/60 backdrop-blur-md"
-                      />
-                      <motion.div 
-                        initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                        className="relative w-full max-w-lg bg-card border rounded-[2.5rem] p-10 shadow-2xl"
-                      >
-                        <h3 className="text-2xl font-bold font-kurdish mb-6">{t.addPatient}</h3>
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-bold font-kurdish mb-2">{t.name}</label>
-                            <input 
-                              type="text" 
-                              value={newPatient.name}
-                              onChange={(e) => setNewPatient(prev => ({ ...prev, name: e.target.value }))}
-                              className="w-full bg-muted border-none p-4 rounded-2xl font-kurdish focus:ring-2 ring-primary/20"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-bold font-kurdish mb-2">{t.condition}</label>
-                            <textarea 
-                              value={newPatient.condition}
-                              onChange={(e) => setNewPatient(prev => ({ ...prev, condition: e.target.value }))}
-                              className="w-full bg-muted border-none p-4 rounded-2xl font-kurdish focus:ring-2 ring-primary/20 resize-none h-32"
-                            />
-                          </div>
-                          <div className="flex gap-4 pt-4">
-                            <button 
-                              onClick={handleAddPatient}
-                              className="flex-1 py-4 bg-primary text-primary-foreground rounded-2xl font-bold font-kurdish hover:shadow-lg transition-all"
-                            >
-                              {t.save}
-                            </button>
-                            <button 
-                              onClick={() => setShowAddPatient(false)}
-                              className="flex-1 py-4 bg-muted text-muted-foreground rounded-2xl font-bold font-kurdish hover:bg-muted/80 transition-all"
-                            >
-                              {t.cancel}
-                            </button>
-                          </div>
-                        </div>
-                      </motion.div>
-                    </div>
-                  )}
-                </AnimatePresence>
-
-                {/* Add Paramedic Modal */}
-                <AnimatePresence>
-                  {showAddParamedic && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-                      <motion.div 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={() => setShowAddParamedic(false)}
-                        className="absolute inset-0 bg-black/60 backdrop-blur-md"
-                      />
-                      <motion.div 
-                        initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                        className="relative w-full max-w-lg bg-card border rounded-[2.5rem] p-10 shadow-2xl"
-                      >
-                        <h3 className="text-2xl font-bold font-kurdish mb-6">{t.addParamedic}</h3>
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-bold font-kurdish mb-2">{t.name}</label>
-                            <input 
-                              type="text" 
-                              value={newParamedic.name}
-                              onChange={(e) => setNewParamedic(prev => ({ ...prev, name: e.target.value }))}
-                              className="w-full bg-muted border-none p-4 rounded-2xl font-kurdish focus:ring-2 ring-primary/20"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-bold font-kurdish mb-2">{t.specialty}</label>
-                            <input 
-                              type="text" 
-                              value={newParamedic.specialty}
-                              onChange={(e) => setNewParamedic(prev => ({ ...prev, specialty: e.target.value }))}
-                              className="w-full bg-muted border-none p-4 rounded-2xl font-kurdish focus:ring-2 ring-primary/20"
-                            />
-                          </div>
-                          <div className="flex gap-4 pt-4">
-                            <button 
-                              onClick={handleAddParamedic}
-                              className="flex-1 py-4 bg-primary text-primary-foreground rounded-2xl font-bold font-kurdish hover:shadow-lg transition-all"
-                            >
-                              {t.save}
-                            </button>
-                            <button 
-                              onClick={() => setShowAddParamedic(false)}
-                              className="flex-1 py-4 bg-muted text-muted-foreground rounded-2xl font-bold font-kurdish hover:bg-muted/80 transition-all"
-                            >
-                              {t.cancel}
-                            </button>
-                          </div>
-                        </div>
-                      </motion.div>
-                    </div>
-                  )}
-                </AnimatePresence>
-
-                {/* Add Usual Item Modal */}
-                <AnimatePresence>
-                  {showAddUsualItem && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-                      <motion.div 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={() => setShowAddUsualItem(false)}
-                        className="absolute inset-0 bg-black/60 backdrop-blur-md"
-                      />
-                      <motion.div 
-                        initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                        className="relative w-full max-w-lg bg-card border rounded-[2.5rem] p-10 shadow-2xl"
-                      >
-                        <h3 className="text-2xl font-bold font-kurdish mb-6">{t.addItem}</h3>
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-bold font-kurdish mb-2">{t.name}</label>
-                            <input 
-                              type="text" 
-                              value={newUsualItem.title}
-                              onChange={(e) => setNewUsualItem(prev => ({ ...prev, title: e.target.value }))}
-                              className="w-full bg-muted border-none p-4 rounded-2xl font-kurdish focus:ring-2 ring-primary/20"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-bold font-kurdish mb-2">{t.description}</label>
-                            <textarea 
-                              value={newUsualItem.description}
-                              onChange={(e) => setNewUsualItem(prev => ({ ...prev, description: e.target.value }))}
-                              className="w-full bg-muted border-none p-4 rounded-2xl font-kurdish focus:ring-2 ring-primary/20 resize-none h-32"
-                            />
-                          </div>
-                          <div className="flex gap-4 pt-4">
-                            <button 
-                              onClick={handleAddUsualItem}
-                              className="flex-1 py-4 bg-primary text-primary-foreground rounded-2xl font-bold font-kurdish hover:shadow-lg transition-all"
-                            >
-                              {t.save}
-                            </button>
-                            <button 
-                              onClick={() => setShowAddUsualItem(false)}
-                              className="flex-1 py-4 bg-muted text-muted-foreground rounded-2xl font-bold font-kurdish hover:bg-muted/80 transition-all"
-                            >
-                              {t.cancel}
-                            </button>
-                          </div>
-                        </div>
-                      </motion.div>
-                    </div>
-                  )}
-                </AnimatePresence>
               </motion.div>
             )}
 
@@ -1896,6 +1659,60 @@ export default function App() {
                             </button>
                           ))}
                         </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="bg-card border rounded-3xl p-8 shadow-sm">
+                    <h3 className="text-xl font-bold mb-6 font-kurdish flex items-center gap-2 border-b pb-4 text-primary">
+                      <Globe className="w-5 h-5" />
+                      {t.webAppLink}
+                    </h3>
+
+                    <div className="space-y-6">
+                      <p className="text-sm text-muted-foreground font-kurdish leading-relaxed">
+                        {t.webAppLinkDesc}
+                      </p>
+
+                      <div className="bg-muted/50 p-4 rounded-2xl border flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 font-mono text-sm break-all">
+                        <span className="select-all text-xs sm:text-sm text-foreground/80 px-2 py-1 bg-background/55 rounded-lg border border-border/60 self-center w-full sm:w-auto flex-1 text-left">
+                          https://ais-pre-dipesbmqo654prgvifmeih-327353933769.europe-west3.run.app
+                        </span>
+                        
+                        <div className="flex gap-2 self-end sm:self-auto">
+                          <button
+                            onClick={() => handleCopyLink("https://ais-pre-dipesbmqo654prgvifmeih-327353933769.europe-west3.run.app")}
+                            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground font-bold font-kurdish rounded-xl text-xs hover:shadow-md transition-all active:scale-95"
+                          >
+                            {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                            <span>{copiedLink ? t.linkCopied : t.copyLink}</span>
+                          </button>
+
+                          <a
+                            href="https://ais-pre-dipesbmqo654prgvifmeih-327353933769.europe-west3.run.app"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 px-4 py-2 bg-muted hover:bg-muted/80 text-foreground border font-bold font-kurdish rounded-xl text-xs transition-all active:scale-95"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>{t.openWebsite}</span>
+                          </a>
+                        </div>
+                      </div>
+
+                      <div className="border-t pt-6">
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                          <h4 className="font-bold font-kurdish text-sm text-emerald-600 dark:text-emerald-400">
+                            {language === 'ku' ? "دروستکردنی ئەپی مۆبایل بە ئەپیلیکس (Appilix)" : "How to publish on Appilix"}
+                          </h4>
+                        </div>
+                        <p className="text-xs text-muted-foreground font-kurdish leading-relaxed">
+                          {language === 'ku' 
+                            ? "١. بچۆ ماڵپەڕی ئەپیلیکس (appilix.com) • ٢. ئەم لینکەی سەرەوە کورت یان ڕاستەوخۆ دانێ لە ژێر 'Website URL' • ٣. دوگمەی دروستکردنی ئەندروید APK دابگرە بۆ داگرتنی ئەپی مۆبایل بۆ خۆت و قوتابییەکانت بێ کێشە!"
+                            : "1. Go to Appilix (appilix.com) • 2. Enter the link above as the 'Website URL' • 3. Click generate Android APK to build the mobile app for download and sharing."
+                          }
+                        </p>
                       </div>
                     </div>
                   </section>
